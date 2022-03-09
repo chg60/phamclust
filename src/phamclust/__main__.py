@@ -1,4 +1,4 @@
-"""A program for assorting genomes into clusters and sub-clusters on
+"""A program for assorting genomes into clusters and sub-clusters
 based on shared gene content. Proteins evolve more slowly than the DNA
 that encodes them, making this approach much more robust for comparing
 the relatedness of bacteria between genera, or phages at almost any

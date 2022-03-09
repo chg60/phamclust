@@ -2,6 +2,7 @@
 of genomes."""
 
 from phamclust.Genome import Genome
+from phamclust.statistics import average
 
 
 def percentage_of_conserved_proteins(source, target):
@@ -48,10 +49,10 @@ def gene_content_similarity(source, target):
     """
     shared_phams = source.intersection(target)
 
-    source_gcs = float(len(shared_phams)) / len(source.phams)
-    target_gcs = float(len(shared_phams)) / len(target.phams)
+    source_gcs = float(len(shared_phams)) / len(source)
+    target_gcs = float(len(shared_phams)) / len(target)
 
-    similarity = sum([source_gcs, target_gcs]) / 2
+    similarity = average([source_gcs, target_gcs])
 
     return round(similarity * 100, 2)
 
