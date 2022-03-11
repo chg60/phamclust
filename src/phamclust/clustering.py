@@ -44,7 +44,7 @@ def dbscan(matrix, eps=None, minpts=3):
     :type minpts: int
     :return: clusters
     """
-    if not eps:
+    if eps is None:
         eps = matrix.epsilon
 
     counter = 0
