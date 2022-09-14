@@ -263,7 +263,10 @@ def matrix_de_novo(genomes, func, cpus, batch_size=20):
     matrix = SymMatrix(list(genomes.keys()))
     node_names = matrix.node_names
 
-    num_batches = len(genomes) // batch_size
+    if len(genomes) < cpus:
+        cpus = len(genomes)
+
+    num_batches = max([len(genomes) // batch_size, 1])
     while len(genomes) / num_batches > batch_size or num_batches % cpus != 0:
         num_batches += 1
 
