@@ -72,4 +72,4 @@ Six metrics are available for calculating intergenomic similarities (single-CPU 
 5. Average Aminoacid Identity (aai)                 (~500 pairs/second)
 6. Proteomic Equivalence Quotient (peq)             (~475 pairs/second)
 
-Because of how cheap the first four metrics are, 4 CPU cores maximizes the processing speed for datasets consisting of fewer than 2,500 genomes.
+Because of how cheap the first four metrics are, the maximum parallelization benefit is seen with just 4 CPU cores for datasets consisting of fewer than 2,500 genomes. The last two metrics are considerably more expensive to calculate, and will see benefit from as many physical cores are available on your machine (i.e., core count, not thread count). 
