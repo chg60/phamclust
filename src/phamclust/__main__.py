@@ -371,7 +371,7 @@ def main():
                 sub_matfile = cluster_dir.joinpath(
                     f"subcluster_{j+1}_similarity.tsv")
                 _ord = [sub_mat.medoid[0]]
-                _ord.extend(sub_mat.nearest_neighbors(_ord[0], threshold=0.0))
+                _ord.extend(sub_mat.nearest_neighbors(_ord[0], threshold=1.0))
                 order.extend(_ord)
                 sub_mat.reorder(_ord)
                 sub_mat.invert()
