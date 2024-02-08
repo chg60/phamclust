@@ -48,7 +48,7 @@ https://doi.org/10.1093/nar/gkv657
 (5) aai         average aminoacid identity          \
 https://doi.org/10.1073/pnas.0409727102
 (6) peq         proteomic equivalence quotient      \
-Gauthier & Hatfull, 2023
+https://doi.org/10.1128/msystems.00443-23
 """
 LINKAGES = {"single", "average", "complete"}
 METRICS = {"gcs": gene_content_similarity,
