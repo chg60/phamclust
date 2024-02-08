@@ -1,6 +1,6 @@
 # phamclust
 
-PhamClust is a tool for performing gene phamily based clustering of bacteriophage genomes. It makes use of a novel genome similarity index, the proteomic equivalence quotient (PEQ) to cluster genomes according to their global similarity. A manuscript describing it in detail has been submitted for publication at mSphere.
+PhamClust is a tool for performing gene phamily based clustering of bacteriophage genomes. It makes use of a novel genome similarity index, the proteomic equivalence quotient (PEQ) to cluster genomes according to their global similarity. It was [published in mSphere](https://doi.org/10.1128/msystems.00443-23) in 2023.
 
 # Installation
 
