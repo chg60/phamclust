@@ -46,7 +46,7 @@ Available metrics:
 (3) pocp        percentage of conserved proteins    https://doi.org/10.1128/JB.01688-14
 (4) af          alignment fraction                  https://doi.org/10.1093/nar/gkv657
 (5) aai         average aminoacid identity          https://doi.org/10.1073/pnas.0409727102
-(6) peq         proteomic equivalence quotient      Gauthier & Hatfull, 2023
+(6) peq         proteomic equivalence quotient      https://doi.org/10.1128/msystems.00443-23
 ```
 
 PhamClust takes an input filepath and an output filepath as its primary arguments. By default, the input path is assumed to be a TSV file mapping genome names/identifiers to pham identifiers and translations.
