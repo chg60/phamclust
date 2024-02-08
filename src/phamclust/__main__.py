@@ -1,13 +1,12 @@
 """Commandline entrypoint to this module."""
 
-import sys
 import datetime
 import hashlib
 import logging
 import pathlib
 import shutil
+import sys
 
-from phamclust import DATE
 from phamclust.cli import parse_args, METRICS
 from phamclust.clustering import hierarchical
 from phamclust.genome import Genome
@@ -15,7 +14,7 @@ from phamclust.heatmap import draw_heatmap
 from phamclust.matrix import matrix_de_novo, matrix_to_squareform, \
     matrix_from_squareform
 
-LOG_STR_FMT = "phamclust: %(asctime)s: %(levelname)s: %(message)s"
+LOG_STR_FMT = "phamclust: %(asctime)s.%(msecs)03d: %(levelname)s: %(message)s"
 LOG_TIME_FMT = "%H:%M:%S"
 
 
@@ -26,7 +25,7 @@ def load_genomes_from_tsv(filepath):
     :param filepath: the TSV file from which to parse genomes
     :type filepath: str | pathlib.Path | os.PathLike[str]
     :return: genomes
-    :rtype: dict[str, Genome]
+    :rtype: list[Genome]
     """
     genomes = dict()
     with open(filepath, "r") as pham_reader:
@@ -45,7 +44,7 @@ def load_genomes_from_tsv(filepath):
 
             genomes[name].add(pham, translation)
 
-    return genomes
+    return [genome for _, genome in genomes.items()]
 
 
 def load_genomes_from_fasta_dir(filepath):
@@ -62,7 +61,7 @@ def load_genomes_from_fasta_dir(filepath):
     :param filepath: path to a directory containing genome FASTA(s)
     :type filepath: str | pathlib.Path | os.PathLike[str]
     :return: genomes
-    :rtype: dict[str, Genome]
+    :rtype: list[Genome]
     """
     genomes = dict()
 
@@ -81,28 +80,28 @@ def load_genomes_from_fasta_dir(filepath):
         else:
             raise ValueError(f"duplicate genome name detected {name}")
 
-    return genomes
+    return [genome for _, genome in genomes.items()]
 
 
-def hash_genomes(genomes):
+def _hash_genomes(genomes):
     """Create an MD5 hashsum from a list of genomes.
 
-    NOTE: If genomes are not sorted in the same order, repeated calls
-    into this function may not return the same hash - even if the
-    genomes themselves are identical.
+    This function assumes that genomes are sorted as desired. Changing
+    the sort order WILL change the MD5 hashsum.
 
     Facilitates re-use of temporary files on subsequent runs of the
     same dataset.
 
     :param genomes: the genomes from which to compute a hashsum
-    :type genomes: dict[str, Genome]
+    :type genomes: list[Genome]
     :return: md5_sum
+    :rtype: str
     """
     hashsum = hashlib.new("md5")
 
     # Always traverse the genomes in ascending name order
-    for name in sorted(genomes.keys()):
-        hashsum.update(str(genomes[name]).encode())
+    for genome in genomes:
+        hashsum.update(str(genome).encode())
 
     return hashsum.hexdigest()
 
@@ -138,55 +137,63 @@ def check_matrix_integrity(matrix):
     return cell_diff, diag_diff, none_diff
 
 
-def main():
-    """Commandline entrypoint for this module."""
-    if len(sys.argv) == 1:
-        sys.argv.append("-h")
-    args = parse_args()
+def main(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
+         clu_distance, clu_linkage, sub_distance, sub_linkage, k_min,
+         no_sub, cpus, rm_tmp, debug):
+    """Main program for phamclust.
 
+    :param infile: input TSV file mapping phage-to-pham-to-translation
+    :type infile: pathlib.Path
+    :param outdir: output directory where files should be written
+    :type outdir: pathlib.Path
+    :param is_genome_dir: indicate that infile should instead be
+        interpreted as a directory of genome FASTA files
+    :type is_genome_dir: bool
+    :param metric: function to use for distance calculations
+    :type metric: str
+    :param nr_distance: distance threshold for clustering very similar
+        genomes
+    :type nr_distance: float
+    :param nr_linkage: hierarchical clustering linkage type to use for
+        clustering very similar genomes
+    :type nr_linkage: str
+    :param clu_distance: distance threshold for clustering less similar
+        genomes
+    :type clu_distance: float
+    :param clu_linkage: hierarchical clustering linkage type to use for
+        clustering less similar genomes
+    :type clu_linkage: str
+    :param sub_distance: distance threshold for sub-clustering genome
+        clusters
+    :type sub_distance: float
+    :param sub_linkage: hierarchical clustering linkage type to use for
+        sub-clustering genome clusters
+    :type sub_linkage: str
+    :param k_min: minimum size of cluster to perform sub-clustering on
+    :type k_min: int
+    :param no_sub: indicate that sub-clustering should not be performed
+    :type no_sub: bool
+    :param cpus: number of CPUs to use for distance calculations
+    :type cpus: int
+    :param rm_tmp: remove temporary files when done
+    :type rm_tmp: bool
+    :param debug: indicate if logging should be set to DEBUG level
+    :type debug: bool
+    """
     # Check infile and outdir
-    infile: pathlib.Path = args.infile
-    outdir: pathlib.Path = args.outdir.joinpath(f"phamclust_{DATE}")
-    expect_dir:     bool = args.genome_dir
-
-    if expect_dir and not infile.is_dir():
+    if is_genome_dir and not infile.is_dir():
         print(f"genome directory '{infile}' does not exist")
         sys.exit(1)
-    elif not expect_dir and not infile.is_file():
+    elif not is_genome_dir and not infile.is_file():
         print(f"input TSV '{infile}' does not exist")
         sys.exit(1)
 
     if not outdir.is_dir():
         outdir.mkdir(parents=True)
 
-    # Expand remaining commandline arguments
-    debug:       bool = args.debug
-    no_sub:      bool = args.no_sub
-    rm_tmp:      bool = args.remove_tmp
-    sub_dist:   float = round(1.0 - args.sub_thresh, 6)     # cast to distance
-    clu_dist:   float = round(1.0 - args.clu_thresh, 6)     # cast to distance
-    nr_dist:    float = round(1.0 - args.nr_thresh, 6)      # cast to distance
-    sub_linkage:  str = args.sub_linkage
-    clu_linkage:  str = args.clu_linkage
-    nr_linkage:   str = args.nr_linkage
-    k_min:        int = max([1, args.k_min])
-    metric:       str = args.metric
-    cpus:         int = args.threads
-    # TODO: add argument to handle subcluster strategy ('all', 'core', 'cloud')
-    sub_strategy: str = "all"
-
     # Sanity check - if nr_dist not lower than clu_dist, use 0.0
-    if nr_dist >= clu_dist:
-        nr_dist = 0.0
-
-    # Set logging context and log runtime parameters
-    logfile = outdir.joinpath("phamclust.log")
-    log_level = logging.INFO
-    if debug:
-        log_level = logging.DEBUG
-    logging.basicConfig(filename=logfile, filemode="w", level=log_level,
-                        format=LOG_STR_FMT, datefmt=LOG_TIME_FMT)
-    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    if nr_distance >= clu_distance:
+        nr_distance = 0.0
 
     logging.info(f"=======================")
     logging.info(f" 0: runtime parameters ")
@@ -196,11 +203,11 @@ def main():
     logging.info(f"debug:      {debug}")
     logging.info(f"subcluster: {not no_sub}")
     logging.info(f"remove tmp: {rm_tmp}")
-    logging.info(f"sub dist:   {sub_dist}")
+    logging.info(f"sub dist:   {sub_distance}")
     logging.info(f"sub link:   {sub_linkage}")
-    logging.info(f"clu dist:   {clu_dist}")
+    logging.info(f"clu dist:   {clu_distance}")
     logging.info(f"clu link:   {clu_linkage}")
-    logging.info(f"nr dist:    {nr_dist}")
+    logging.info(f"nr dist:    {nr_distance}")
     logging.info(f"nr link:    {nr_linkage}")
     logging.info(f"metric:     {metric}")
     logging.info(f"cpus:       {cpus}")
@@ -209,13 +216,15 @@ def main():
     logging.info(f"====================")
     logging.info(f" 1: parsing genomes ")
     logging.info(f"====================")
-    if expect_dir:
+    if is_genome_dir:
         genomes = load_genomes_from_fasta_dir(infile)
         logging.info(f"loaded {len(genomes)} genomes from input directory")
     else:
         genomes = load_genomes_from_tsv(infile)
         logging.info(f"loaded {len(genomes)} genomes from input TSV")
-    hashsum = hash_genomes(genomes)
+
+    genomes.sort(key=lambda x: x.name)
+    hashsum = _hash_genomes(genomes)
     logging.info(f"md5 hashsum is {hashsum}")
 
     # Create temporary directory (or re-use) from genome hashsum
@@ -229,8 +238,8 @@ def main():
     if not tmp_genomes.is_dir():
         tmp_genomes.mkdir()
 
-    for name, genome in genomes.items():
-        genome_fasta = tmp_genomes.joinpath(f"{name}.fasta")
+    for genome in genomes:
+        genome_fasta = tmp_genomes.joinpath(f"{genome.name}.fasta")
         if not genome_fasta.is_file():
             genome.save(genome_fasta)
 
@@ -283,7 +292,7 @@ def main():
         if status[2] != 0:
             logging.error(f"found {status[2]} unfilled edges")
 
-        print(f"matrix validation failed - check '{logfile}' for details")
+        print(f"matrix validation failed - check log for details")
         sys.exit(1)
 
     # If we got here, matrix is OK - begin clustering
@@ -291,9 +300,9 @@ def main():
     logging.info(f" 3: cluster genomes ")
     logging.info(f"====================")
     logging.info(f"grouping highly redundant genomes with distance <= "
-                 f"{nr_dist} by {nr_linkage} linkage")
+                 f"{nr_distance} by {nr_linkage} linkage")
     # Seed clusters with groups of phages that have low levels of divergence
-    clu_mats = hierarchical(dist_mat, eps=nr_dist, linkage=nr_linkage)
+    clu_mats = hierarchical(dist_mat, eps=nr_distance, linkage=nr_linkage)
 
     # Map the seed cluster representatives to their clusters
     seed_map = {x.medoid[0]: x for x in clu_mats}
@@ -302,8 +311,8 @@ def main():
     repr_mat = dist_mat.extract_submatrix(list(seed_map.keys()))
     logging.info(f"found {len(repr_mat)} groups of similar genomes")
     logging.info(f"clustering non-redundant genomes with distance <= "
-                 f"{clu_dist} by {clu_linkage} linkage")
-    clu_mats = hierarchical(repr_mat, eps=clu_dist, linkage=clu_linkage)
+                 f"{clu_distance} by {clu_linkage} linkage")
+    clu_mats = hierarchical(repr_mat, eps=clu_distance, linkage=clu_linkage)
     for i, clu_mat in enumerate(clu_mats):
         all_nodes = list()
         for repr_node in clu_mat.nodes:
@@ -336,8 +345,8 @@ def main():
         logging.debug(f"creating new cluster directory {cluster_dir}")
         cluster_dir.mkdir()
 
-        cluster_nodes = sorted(clu_mat.nodes)
-        cluster_genomes = [genomes[name] for name in cluster_nodes]
+        cluster_nodes = set(clu_mat.nodes)
+        cluster_genomes = [x for x in genomes if x.name in cluster_nodes]
         cluster_matfile = cluster_dir.joinpath(f"{metric}_similarity.tsv")
         cluster_heatmap = cluster_dir.joinpath(f"{metric}_heatmap.pdf")
         cluster_heatmap2 = cluster_dir.joinpath(f"{metric}_heatmap.html")
@@ -364,7 +373,8 @@ def main():
             draw_heatmap(clu_mat, midpoint=0.5, filename=cluster_heatmap2)
             continue
         else:
-            sub_mats = hierarchical(clu_mat, eps=sub_dist, linkage=sub_linkage)
+            sub_mats = hierarchical(clu_mat, eps=sub_distance,
+                                    linkage=sub_linkage)
             sub_mats = sorted(sub_mats, reverse=True)
             order = list()
             for j, sub_mat in enumerate(sub_mats):
@@ -397,7 +407,7 @@ def main():
 
         for i, single_mat in enumerate(single_mats):
             node = single_mat.nodes[0]
-            genome = genomes[node]
+            genome = [x for x in genomes if x.name == node][0]
 
             genome_file = genome_dir.joinpath(f"{genome.name}.faa")
             genome.save(genome_file)
@@ -441,4 +451,35 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    """Commandline entrypoint."""
+    if len(sys.argv) == 1:
+        sys.argv.append("-h")
+    args = parse_args()
+
+    # Set logging context and log runtime parameters - this is done here so
+    # that if main() is invoked by another package, we won't have duplicate
+    # handlers printing to console or writing to file
+    logfile = args.outdir.joinpath("phamclust.log")
+    log_level = logging.INFO
+    if args.debug:
+        log_level = logging.DEBUG
+    logging.basicConfig(filename=logfile, filemode="w", level=log_level,
+                        format=LOG_STR_FMT, datefmt=LOG_TIME_FMT)
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+
+    # Run PhamClust!
+    main(infile=args.infile,
+         outdir=args.outdir,
+         is_genome_dir=args.genome_dir,
+         metric=args.metric,
+         nr_distance=round(1.0 - args.nr_thresh, 6),
+         nr_linkage=args.nr_linkage,
+         clu_distance=round(1.0 - args.clu_thresh, 6),
+         clu_linkage=args.clu_linkage,
+         sub_distance=round(1.0 - args.sub_thresh, 6),
+         sub_linkage=args.sub_linkage,
+         k_min=max([1, args.k_min]),
+         cpus=args.threads,
+         no_sub=args.no_sub,
+         rm_tmp=args.remove_tmp,
+         debug=args.debug)
