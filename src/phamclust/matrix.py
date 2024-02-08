@@ -19,12 +19,13 @@ here. They include the matrix diagonal to allow inference of whether
 the matrix is a distance or similarity matrix.
 """
 
-from itertools import combinations_with_replacement
+# from itertools import combinations_with_replacement
 import logging
 
+import joblib
 from numpy import array
 
-from phamclust.parallel_process import parallelize
+# from phamclust.parallel_process import parallelize
 from phamclust.statistics import average, standard_deviation, skewness
 
 
@@ -217,7 +218,8 @@ class SymMatrix:
         :type source: str
         :param target: the target node name
         :type target: str
-        :return:
+        :return: weight stored between source and target
+        :rtype: float
         """
         if source not in self:
             raise KeyError(f"node '{source}' not in matrix")
@@ -225,9 +227,10 @@ class SymMatrix:
             raise KeyError(f"node '{target}' not in matrix")
 
         # use lexicographically smaller node as source, larger as target
-        _source, _target = min((source, target)), max((source, target))
+        if source > target:
+            source, target = target, source
 
-        return self._matrix[_source].get(_target, None)
+        return self._matrix[source].get(target, None)
 
     def invert(self):
         """Flip the matrix from a distance to identity matrix (or
@@ -309,9 +312,10 @@ class SymMatrix:
             raise ValueError(f"weight {weight} not in [0.0, 1.0]")
 
         # use lexicographically smaller node as source, larger as target
-        _source, _target = min((source, target)), max((source, target))
+        if source > target:
+            source, target = target, source
 
-        self._matrix[_source][_target] = round(weight, 6)
+        self._matrix[source][target] = round(weight, 6)
 
     def lock(self):
         """Mark this matrix as read-only."""
@@ -389,55 +393,27 @@ class SymMatrix:
 
 
 # SymMatrix de novo
-def _calculate_batch_adjacency(genomes, pairs, func, as_distance=True):
-    """Calculate the similarity between source and target genomes using
-    `func`.
+def _outside_in_index_iterator(num_indices):
+    """Generator that iterates over list indices from the front and back
+    toward the middle.
 
-    :param genomes: all genomes in the dataset
-    :type genomes: dict[str, phamclust.Genome.Genome]
-    :param pairs: list of (source, target) pairs to compute
-    :type pairs: list[tuple[str, str]]
-    :param func: similarity function to use for genome comparisons
-    :type func: function
-    :param as_distance: calculate distances rather than similarities
-    :type as_distance: bool
+    :param num_indices: the size of the list to be iterated
+    :type num_indices: int
+    >>> list(_outside_in_index_iterator(5))
+    [0, 4, 1, 3, 2]
     """
-    adjacency = list()
-    for source_name, target_name in pairs:
-        if source_name == target_name:
-            weight = 1.0 * (not as_distance)
-        else:
-            source = genomes[source_name]
-            target = genomes[target_name]
-            weight = func(source, target, as_distance)
-
-        adjacency.append((source_name, target_name, weight))
-
-    return adjacency
+    start, mid, end = 0, num_indices // 2, num_indices - 1
+    for x, y in zip(range(start, mid), range(end, mid - 1, -1)):
+        yield x
+        yield y
+    if num_indices % 2 == 1:
+        yield mid
 
 
-def _calculate_adjacency(genomes, func, as_distance=True):
-    """Calculate the similarity between source and target genomes using
-    `func`.
-
-    :param genomes: all genomes in the dataset
-    :type genomes: dict[str, phamclust.Genome.Genome]
-    :param func: similarity function to use for genome comparisons
-    :type func: function
-    :param as_distance: calculate distances rather than similarities
-    :type as_distance: bool
-    """
-    adjacency = list()
-    nodes, jobs = list(genomes.keys()), list()
-    for i, source_name in enumerate(nodes):
-        source = genomes[source_name]
-        for target_name in nodes[i:]:
-            target = genomes[target_name]
-            weight = func(source, target, as_distance)
-
-            adjacency.append((source_name, target_name, weight))
-
-    return adjacency
+def calculate_adjacency(source, target, func, distance=True):
+    """Calculate the distance between two genomes using the provided
+    function."""
+    return source.name, target.name, func(source, target, as_distance=distance)
 
 
 def matrix_de_novo(genomes, func, cpus, as_distance=True):
@@ -449,7 +425,7 @@ def matrix_de_novo(genomes, func, cpus, as_distance=True):
     but is ~25-30% faster.
 
     :param genomes: the genomes to build a matrix from
-    :type genomes: dict[str, phamclust.Genome.Genome]
+    :type genomes: list[phamclust.genome.Genome]
     :param func: similarity function to use for genome comparisons
     :type func: function
     :param cpus: number of CPU cores to use for matrix-building
@@ -471,39 +447,43 @@ def matrix_de_novo(genomes, func, cpus, as_distance=True):
     if n_pairs < cpus:
         logging.info(f"small dataset - reducing # CPUs to {n_pairs}")
         cpus = n_pairs
-
-    n_batches = min((1, n_pairs // cpus))
-    while n_batches % cpus != 0:
-        n_batches += 1
-
     # <<< End sanity checks <<<
 
-    # >>> Begin creating & running jobs >>>
-    jobs = list()
-    for _ in range(n_batches):
-        jobs.append(list())
+    # <<< Initialize distance matrix, populate the diagonal for "free" >>>
+    matrix = SymMatrix(nodes=[g.name for g in genomes], is_distance=as_distance)
+    for genome in genomes:
+        matrix.set_weight(genome.name, genome.name, 1.0 - as_distance)
 
-    nodes = sorted(genomes.keys())
-    for i, pair in enumerate(combinations_with_replacement(nodes, 2)):
-        job_idx = i % n_batches
-        jobs[job_idx].append(pair)
+    # Initialize parallel runner - disable memory mapping
+    runner = joblib.Parallel(n_jobs=cpus, return_as="generator",
+                             max_nbytes=None)
 
-    for i in range(n_batches):
-        jobs[i] = (genomes, jobs[i], func, as_distance)
+    # TODO: a future release of joblib - generator_unordered will be faster!!
+    # runner = joblib.Parallel(n_jobs=cpus, return_as="generator_unordered",
+    #                          max_nbytes=None)
 
-    adjacency_data = parallelize(_calculate_batch_adjacency, jobs, cpus)
-    # adjacency_data = _calculate_adjacency(genomes, func, as_distance)
-    # <<< End creating & running jobs <<<
+    # Determine how many batches to chunk the data into - target
+    # 10,000 calculations per cpu per batch
+    stride = int(len(genomes) // (n_pairs / (10000 * cpus)))
+    iter_order = [i for i in _outside_in_index_iterator(len(genomes))]
+    batches = [iter_order[i:i+stride] for i in range(0, len(genomes), stride)]
+    for batch_indices in batches:
+        sources = [genomes[i] for i in batch_indices]
+        targets = [genomes[i+1:] for i in batch_indices]
 
-    # <<< Initialize the matrix >>>
-    matrix = SymMatrix(nodes=nodes, is_distance=as_distance)
+        batch = list()
+        for source, targets in zip(sources, targets):
+            for target in targets:
+                batch.append((source, target, func, as_distance))
 
-    # >>> Begin populating the matrix from adjacency data >>>
-    for adjacency_batch in adjacency_data:
-        for source, target, weight in adjacency_batch:
-            matrix.set_weight(source, target, weight)
+        results = runner(joblib.delayed(calculate_adjacency)(*b) for b in batch)
 
-    # <<< End populating the matrix from adjacency data <<<
+        for _source, _target, _weight in results:
+            matrix.set_weight(_source, _target, _weight)
+
+        logging.debug(f"finished {', '.join([x.name for x in sources])}")
+
+    del runner
 
     return matrix
 
