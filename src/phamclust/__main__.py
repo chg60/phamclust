@@ -137,9 +137,9 @@ def check_matrix_integrity(matrix):
     return cell_diff, diag_diff, none_diff
 
 
-def main(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
-         clu_distance, clu_linkage, sub_distance, sub_linkage, k_min,
-         no_sub, cpus, rm_tmp, debug):
+def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
+              clu_distance, clu_linkage, sub_distance, sub_linkage, k_min,
+              no_sub, cpus, rm_tmp, debug):
     """Main program for phamclust.
 
     :param infile: input TSV file mapping phage-to-pham-to-translation
@@ -180,17 +180,6 @@ def main(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
     :param debug: indicate if logging should be set to DEBUG level
     :type debug: bool
     """
-    # Check infile and outdir
-    if is_genome_dir and not infile.is_dir():
-        print(f"genome directory '{infile}' does not exist")
-        sys.exit(1)
-    elif not is_genome_dir and not infile.is_file():
-        print(f"input TSV '{infile}' does not exist")
-        sys.exit(1)
-
-    if not outdir.is_dir():
-        outdir.mkdir(parents=True)
-
     # Sanity check - if nr_dist not lower than clu_dist, use 0.0
     if nr_distance >= clu_distance:
         nr_distance = 0.0
@@ -450,36 +439,50 @@ def main(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
         shutil.rmtree(tmpdir)
 
 
-if __name__ == "__main__":
-    """Commandline entrypoint."""
+def main():
+    """Commandline entry point."""
     if len(sys.argv) == 1:
         sys.argv.append("-h")
     args = parse_args()
 
-    # Set logging context and log runtime parameters - this is done here so
-    # that if main() is invoked by another package, we won't have duplicate
-    # handlers printing to console or writing to file
+    # Check infile and outdir
+    if args.genome_dir and not args.infile.is_dir():
+        print(f"genome directory '{args.infile}' does not exist")
+        sys.exit(1)
+    elif not args.genome_dir and not args.infile.is_file():
+        print(f"input TSV '{args.infile}' does not exist")
+        sys.exit(1)
+
+    if not args.outdir.is_dir():
+        args.outdir.mkdir(parents=True)
+
+    # Set logging context and log runtime parameters
     logfile = args.outdir.joinpath("phamclust.log")
     log_level = logging.INFO
     if args.debug:
         log_level = logging.DEBUG
+
     logging.basicConfig(filename=logfile, filemode="w", level=log_level,
                         format=LOG_STR_FMT, datefmt=LOG_TIME_FMT)
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
     # Run PhamClust!
-    main(infile=args.infile,
-         outdir=args.outdir,
-         is_genome_dir=args.genome_dir,
-         metric=args.metric,
-         nr_distance=round(1.0 - args.nr_thresh, 6),
-         nr_linkage=args.nr_linkage,
-         clu_distance=round(1.0 - args.clu_thresh, 6),
-         clu_linkage=args.clu_linkage,
-         sub_distance=round(1.0 - args.sub_thresh, 6),
-         sub_linkage=args.sub_linkage,
-         k_min=max([1, args.k_min]),
-         cpus=args.threads,
-         no_sub=args.no_sub,
-         rm_tmp=args.remove_tmp,
-         debug=args.debug)
+    phamclust(infile=args.infile,
+              outdir=args.outdir,
+              is_genome_dir=args.genome_dir,
+              metric=args.metric,
+              nr_distance=round(1.0 - args.nr_thresh, 6),
+              nr_linkage=args.nr_linkage,
+              clu_distance=round(1.0 - args.clu_thresh, 6),
+              clu_linkage=args.clu_linkage,
+              sub_distance=round(1.0 - args.sub_thresh, 6),
+              sub_linkage=args.sub_linkage,
+              k_min=max([1, args.k_min]),
+              cpus=args.threads,
+              no_sub=args.no_sub,
+              rm_tmp=args.remove_tmp,
+              debug=args.debug)
+
+
+if __name__ == "__main__":
+    main()
