@@ -454,13 +454,17 @@ def matrix_de_novo(genomes, func, cpus, as_distance=True):
     for genome in genomes:
         matrix.set_weight(genome.name, genome.name, 1.0 - as_distance)
 
+    # TODO: when version 1.4 is formally released, bump joblib in requirements
+    #  and remove try/except initialization in favor of 1.4-only!
     # Initialize parallel runner - disable memory mapping
-    runner = joblib.Parallel(n_jobs=cpus, return_as="generator",
-                             max_nbytes=None)
-
-    # TODO: a future release of joblib - generator_unordered will be faster!!
-    # runner = joblib.Parallel(n_jobs=cpus, return_as="generator_unordered",
-    #                          max_nbytes=None)
+    try:
+        # joblib version must be at least 1.4 to support this better approach
+        runner = joblib.Parallel(n_jobs=cpus, return_as="generator_unordered",
+                                 max_nbytes=None)
+    except ValueError:
+        # joblib version 1.3 roll back to this approach
+        runner = joblib.Parallel(n_jobs=cpus, return_as="generator",
+                                 max_nbytes=None)
 
     # Determine how many batches to chunk the data into - target
     # 10,000 calculations per cpu per batch
@@ -640,7 +644,11 @@ def matrix_to_squareform(matrix, filepath, lower_triangle=False):
     :return: filepath
     """
     with open(filepath, "w") as squareform_writer:
-        squareform_writer.write(f"{len(matrix)}\n")
+        header = f"{len(matrix)}"
+        if not lower_triangle:
+            header += "\t" + "\t".join(matrix.nodes)
+
+        squareform_writer.write(f"{header}\n")
 
         for i, (source, row) in enumerate(matrix.iterrows()):
             if not lower_triangle:
