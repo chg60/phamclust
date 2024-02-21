@@ -8,7 +8,7 @@ import shutil
 import sys
 
 from phamclust.cli import parse_args, METRICS
-from phamclust.clustering import hierarchical
+from phamclust.clustering import hierarchical_clustering
 from phamclust.genome import Genome
 from phamclust.heatmap import draw_heatmap
 from phamclust.matrix import matrix_de_novo, matrix_to_squareform, \
@@ -291,7 +291,8 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
     logging.info(f"grouping highly redundant genomes with distance <= "
                  f"{nr_distance} by {nr_linkage} linkage")
     # Seed clusters with groups of phages that have low levels of divergence
-    clu_mats = hierarchical(dist_mat, eps=nr_distance, linkage=nr_linkage)
+    clu_mats = hierarchical_clustering(dist_mat, eps=nr_distance,
+                                       linkage=nr_linkage)
 
     # Map the seed cluster representatives to their clusters
     seed_map = {x.medoid[0]: x for x in clu_mats}
@@ -301,7 +302,8 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
     logging.info(f"found {len(repr_mat)} groups of similar genomes")
     logging.info(f"clustering non-redundant genomes with distance <= "
                  f"{clu_distance} by {clu_linkage} linkage")
-    clu_mats = hierarchical(repr_mat, eps=clu_distance, linkage=clu_linkage)
+    clu_mats = hierarchical_clustering(repr_mat, eps=clu_distance,
+                                       linkage=clu_linkage)
     for i, clu_mat in enumerate(clu_mats):
         all_nodes = list()
         for repr_node in clu_mat.nodes:
@@ -362,8 +364,8 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
             draw_heatmap(clu_mat, midpoint=0.5, filename=cluster_heatmap2)
             continue
         else:
-            sub_mats = hierarchical(clu_mat, eps=sub_distance,
-                                    linkage=sub_linkage)
+            sub_mats = hierarchical_clustering(clu_mat, eps=sub_distance,
+                                               linkage=sub_linkage)
             sub_mats = sorted(sub_mats, reverse=True)
             order = list()
             for j, sub_mat in enumerate(sub_mats):
@@ -413,14 +415,17 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
     for single_mat in single_mats:
         dataset_order.extend(single_mat.nodes)
 
-    dataset_heatmap = tmp_clusters.joinpath(f"{metric}_heatmap.html")
+    dataset_html = tmp_clusters.joinpath(f"{metric}_heatmap.html")
+    dataset_pdf = tmp_clusters.joinpath(f"{metric}_heatmap.pdf")
     dist_mat.reorder(dataset_order)
 
     logging.info(f"convert to similarity matrix for easier visualization")
     dist_mat.invert()
 
-    logging.info(f"drawing heatmap and saving to {dataset_heatmap.name}")
-    draw_heatmap(dist_mat, midpoint=0.5, filename=dataset_heatmap)
+    logging.info(f"drawing heatmap HTML and saving to {dataset_html}")
+    draw_heatmap(dist_mat, midpoint=0.5, filename=dataset_html)
+    logging.info(f"drawing heatmap PDF and saving to {dataset_pdf}")
+    draw_heatmap(dist_mat, midpoint=0.5, filename=dataset_pdf)
 
     # Copy output files to output directory
     logging.info(f"========================")
