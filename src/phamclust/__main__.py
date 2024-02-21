@@ -429,6 +429,9 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
     # if outdir.is_dir():
     #     logging.info(f"removing existing output directory {outdir}")
     #     shutil.rmtree(outdir)
+    matrix_out = outdir.joinpath(f"pairwise_{metric}_similarities.tsv")
+    logging.info(f"writing pairwise {metric} similarities to {matrix_out}")
+    matrix_to_squareform(dist_mat, matrix_out)
 
     logging.info(f"moving output files from temporary directory to {outdir}")
     shutil.copytree(tmp_clusters, outdir, dirs_exist_ok=True)
