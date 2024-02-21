@@ -1,7 +1,7 @@
 from sklearn.cluster import AgglomerativeClustering
 
 
-def hierarchical(matrix, linkage, eps=None, n_clusters=None):
+def hierarchical_clustering(matrix, linkage, eps=None, n_clusters=None):
     """Perform hierarchical clustering of the matrix nodes.
 
     Returns cluster sub-matrices in descending size order.
