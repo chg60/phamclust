@@ -30,7 +30,7 @@ def load_genomes_from_tsv(filepath):
     genomes = dict()
     with open(filepath, "r") as pham_reader:
         for row in pham_reader:
-            row = row.rstrip().split()
+            row = row.rstrip().split("\t")
 
             if len(row) == 3:
                 name, pham, translation = row
