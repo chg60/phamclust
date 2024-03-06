@@ -24,8 +24,9 @@ import logging
 
 import joblib
 from numpy import array
+from scipy.spatial.distance import squareform
+from scipy.cluster.hierarchy import dendrogram, linkage
 
-# from phamclust.parallel_process import parallelize
 from phamclust.statistics import average, standard_deviation, skewness
 
 
@@ -245,8 +246,12 @@ class SymMatrix:
 
         return self
 
-    def reorder(self, nodes):
+    def reorder(self, nodes=None):
         """Change the matrix traversal order, using the incoming nodes."""
+        # if nodes not given, use tree order
+        if not nodes:
+            nodes = [self._nodes[x] for x in _get_tree_order(self)]
+
         # Sanity checks: every node in matrix should also be in nodes
         if len(nodes) != len(self):
             raise ValueError(f"need {len(self)} nodes but got {len(nodes)}")
@@ -329,8 +334,16 @@ class SymMatrix:
         """Check whether this matrix is read-only."""
         return self._locked
 
-    def to_ndarray(self):
-        """Cast this matrix to a numpy array."""
+    def to_ndarray(self, condensed=False):
+        """Cast this matrix to a numpy array.
+
+        :return: numpy array
+        :rtype: numpy.ndarray
+        """
+        if condensed:
+            return squareform(array([x for _, x in self.iterrows()]),
+                              force="tovector")
+
         return array([x for _, x in self.iterrows()])
 
     def __contains__(self, item):
@@ -556,17 +569,21 @@ def read_adjacency(filepath):
             yield edge[0], edge[1], float(edge[2])
 
 
-def matrix_to_adjacency(matrix, filepath):
+def matrix_to_adjacency(matrix, filepath, skip_zero=False):
     """Write matrix to a file, as an adjacency matrix.
 
     :param matrix: the matrix to write to a file
     :type matrix: SymMatrix
     :param filepath: path to the file to write matrix to
     :type filepath: pathlib.Path
+    :param skip_zero: skip source-target pairs with zero edge weight
+    :type skip_zero: bool
     :return: filepath
     """
     with open(filepath, "w") as adjacency_writer:
         for source, target, weight in matrix:
+            if skip_zero and not weight:
+                continue
             adjacency_writer.write(f"{source}\t{target}\t{weight:.6f}\n")
 
     return filepath
@@ -659,3 +676,19 @@ def matrix_to_squareform(matrix, filepath, lower_triangle=False):
             squareform_writer.write(f"{source:<24}\t{row}\n")
 
     return filepath
+
+
+def _get_tree_order(matrix):
+    """Return the distance-sorted leaf (node) order for a given matrix.
+
+    :param matrix: the matrix to get the distance-sorted order from
+    :type matrix: SymMatrix"""
+    if not matrix.is_distance:
+        matrix = matrix.extract_submatrix(matrix.nodes)
+        matrix.invert()
+
+    z = linkage(matrix.to_ndarray(condensed=True), method='single')
+
+    d = dendrogram(z, no_plot=True, get_leaves=True, count_sort='descending')
+
+    return d["leaves"]
