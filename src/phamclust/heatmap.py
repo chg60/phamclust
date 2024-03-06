@@ -31,27 +31,28 @@ def draw_heatmap(matrix, midpoint=None, colorblind=False, filename=None):
     fig = px.imshow(matrix.to_ndarray(), x=labels, y=labels,
                     color_continuous_scale=scale, range_color=[0.0, 1.0])
 
+    # Values have been empirically derived using matrices from size 2-750
+    width, height = 16 * len(matrix), 9 * len(matrix)
+    scale = 960 / height
+
+    while scale > 5:
+        width, height = width * 2, height * 2
+        scale = 960 / height
+
+    font_size = int(max([8.5 - 2 * scale, 5.67 - (2 / 3 * scale)]))
+
     fig.update_layout({'yaxis_nticks': len(matrix),
-                       'xaxis_nticks': len(matrix)})
+                       'xaxis_nticks': len(matrix),
+                       'font_size': max([1, font_size])})
 
     if not filename:
         fig.show()
     elif filename.suffix == ".html":
-        fig.write_html(filename)
+        # Set canvas size based on screen size for HTML output
+        fig.write_html(filename, default_height='100%', default_width='100%')
     else:
-        if len(matrix) > 200:
-            fig.write_image(filename, scale=0.125, width=12.5 * len(matrix),
-                            height=12.5 * len(matrix), validate=True)
-        elif len(matrix) > 100:
-            fig.write_image(filename, scale=0.25, width=25 * len(matrix),
-                            height=25 * len(matrix), validate=True)
-        elif len(matrix) > 50:
-            fig.write_image(filename, scale=0.5, width=50 * len(matrix),
-                            height=50 * len(matrix), validate=True)
-        elif len(matrix) > 25:
-            fig.write_image(filename, scale=0.75, width=75 * len(matrix),
-                            height=75 * len(matrix), validate=True)
-        else:
-            fig.write_image(filename)
+        # Use calculated scale, width, height for all others
+        fig.write_image(filename, scale=scale, width=width, height=height,
+                        validate=True)
 
     return filename
