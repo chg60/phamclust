@@ -1,6 +1,7 @@
 import shlex
 from subprocess import Popen, PIPE
 
+
 BLASTN_FIELDS = ['qseqid', 'sseqid', 'nident', 'length', 'qstart', 'qend',
                  'sstart', 'send', 'qlen', 'slen', 'evalue' 'bitscore']
 
@@ -11,6 +12,14 @@ class BlastError(Exception):
 
 
 def blastn(query, subject):
+    """Run blastn on a pair of nucleotide FASTA files and return the stdout.
+
+    :param query: the query FASTA file
+    :type query: pathlib.Path
+    :param subject: the subject FASTA file
+    :type subject: pathlib.Path
+    :return: the stdout from blastn
+    """
     fields = " ".join(BLASTN_FIELDS)
     command = f"blastn -query {query} -subject {subject} -outfmt '6 " \
               f"{fields}' -task blastn -evalue 0.001 -dust no -culling_limit 1"
@@ -25,12 +34,23 @@ def blastn(query, subject):
     return stdout
 
 
-def blast_multiple(query, subjects, d):
+def blastn_multiple(query, subjects, d):
+    """Run blastn between a single query and multiple subjects and
+    write the results to a file in `d` named after the query.
+
+    :param query: the query FASTA file
+    :type query: pathlib.Path
+    :param subjects: a list of subject FASTA files
+    :type subjects: list[pathlib.Path]
+    :param d: the output directory to write results to
+    :type d: pathlib.Path
+    :return: the output filepath
+    """
     outname = d.joinpath(f"{query.stem}.tsv")
 
     for subject in subjects:
-        with open(outname, "a") as fh:
-            fh.write(blastn(query, subject))
+        with open(outname, "a") as blast_handle:
+            blast_handle.write(blastn(query, subject))
 
     return outname
 
@@ -39,7 +59,9 @@ if __name__ == "__main__":
     import pathlib
     import sys
 
-    from phamclust.parallel_process import parallelize, CPUS
+    from joblib import Parallel, delayed
+
+    from phamclust.parallel_process import CPUS
     from phamclust.matrix import matrix_from_adjacency, matrix_to_squareform
 
     indir = pathlib.Path(sys.argv[1]).resolve()
@@ -49,25 +71,34 @@ if __name__ == "__main__":
         outdir.mkdir()
 
     fnas = [x for x in indir.iterdir() if x.suffix == ".fna"]
-    jobs, temp_outs = list(), list()
-    for query in fnas:
-        outfile = outdir.joinpath(f"{query.stem}.tsv")
+
+    # Initialize parallel runner - disable memory mapping
+    runner = Parallel(n_jobs=CPUS, return_as="generator_unordered",
+                      max_nbytes=None)
+
+    # Set up and dispatch the parallel jobs
+    batch, temp_outs = list(), list()
+    for q in fnas:
+        outfile = outdir.joinpath(f"{q.stem}.tsv")
         if outfile.is_file():
             temp_outs.append(outfile)
             continue
-        jobs.append((query, fnas, outdir))
-
-    temp_outs.extend(parallelize(blast_multiple, jobs, CPUS))
+        batch.append((q, fnas, outdir))
+    temp_outs.extend(runner(delayed(blastn_multiple)(*b) for b in batch))
 
     outfile = outdir.parent.joinpath("blastn_adjacency.tsv")
     if not outfile.is_file():
-
         blastn_map = dict()
         for temp_out in temp_outs:
             with open(temp_out, "r") as temp_reader:
                 for row in temp_reader:
                     source, target, *(data) = row.rstrip().split("\t")
-                    data = [int(x) for x in data]
+                    for i, datum in enumerate(data):
+                        try:
+                            data[i] = int(datum)
+                        except ValueError:
+                            data[i] = float(datum)
+
                     if source in blastn_map:
                         if target in blastn_map[source]:
                             blastn_map[source][target].append(data)
@@ -87,17 +118,17 @@ if __name__ == "__main__":
                     weight = 0.0
                 elif not source_data:
                     numerator = sum([int(x[0]) for x in target_data])
-                    denominator = target_data[0][-2]
+                    denominator = target_data[0][-3]
                     weight = min([numerator/denominator, 1.0])
                 elif not target_data:
                     numerator = sum([int(x[0]) for x in source_data])
-                    denominator = source_data[0][-2]
+                    denominator = source_data[0][-3]
                     weight = min([numerator/denominator, 1.0])
                 else:
                     numerator = sum([int(x[0]) for x in source_data])
                     numerator += sum([int(x[0]) for x in target_data])
-                    denominator = int(source_data[0][-2])
-                    denominator += int(target_data[0][-2])
+                    denominator = int(source_data[0][-3])
+                    denominator += int(target_data[0][-3])
                     weight = min([numerator/denominator, 1.0])
 
                 fh.write(f"{source}\t{target}\t{1.0 - weight:.6f}\n")
