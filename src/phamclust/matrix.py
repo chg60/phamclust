@@ -467,17 +467,9 @@ def matrix_de_novo(genomes, func, cpus, as_distance=True):
     for genome in genomes:
         matrix.set_weight(genome.name, genome.name, 1.0 - as_distance)
 
-    # TODO: when version 1.4 is formally released, bump joblib in requirements
-    #  and remove try/except initialization in favor of 1.4-only!
     # Initialize parallel runner - disable memory mapping
-    try:
-        # joblib version must be at least 1.4 to support this better approach
-        runner = joblib.Parallel(n_jobs=cpus, return_as="generator_unordered",
-                                 max_nbytes=None)
-    except ValueError:
-        # joblib version 1.3 roll back to this approach
-        runner = joblib.Parallel(n_jobs=cpus, return_as="generator",
-                                 max_nbytes=None)
+    runner = joblib.Parallel(n_jobs=cpus, return_as="generator_unordered",
+                             max_nbytes=None)
 
     # Determine how many batches to chunk the data into - target
     # 10,000 calculations per cpu per batch
@@ -643,7 +635,7 @@ def read_squareform(filepath):
     with open(filepath, "r") as squareform_reader:
         next(squareform_reader)     # skip first line, only has matrix size
         for row in squareform_reader:
-            row = row.rstrip().split()
+            row = row.rstrip().split("\t")
             name = row[0]
             row = [float(x) for x in row[1:]]
             yield name, row
