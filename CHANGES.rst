@@ -4,16 +4,21 @@ Latest changes
 In development
 --------------
 
-- Awaiting next joblib release, to unlock
-  `Parallel(return_as="generator_unordered")`. This should restore previously
-  established speed while maintaining low memory footprint.
-
 - Add distogram to heatmaps
 
-- Allow sorting of clusters and subclusters by distance-tree order rather than
-  descending size order
+Release 1.2.0 -- 2024/03/06
+---------------------------
 
-Release 1.1.0 -- 2023/02/08
+- Added support for joblib 1.4.dev0 (installed from GitHub), unlocking
+  ``Parallel(return_as="generator_unordered")``. This restores pre-joblib speed
+  while maintaining the very low memory footprint enabled by joblib.
+
+- Matrices can now be sorted in tree order; call ``.reorder()`` on your matrix
+  without supplying a node-order and it will be put in tree order.
+
+- PDF heatmaps traded for SVG format instead.
+
+Release 1.1.0 -- 2024/02/08
 ---------------------------
 
 - Replaced internal parallelization with joblib.Parallel for drastically
