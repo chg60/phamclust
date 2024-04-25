@@ -32,6 +32,7 @@ def recommended_cpus(main=4.0, per_core=1.0):
     return cpus
 
 
+COLORS = "red,yellow,green"
 CPUS = recommended_cpus()
 EPILOG = """
 Available metrics:
@@ -51,12 +52,12 @@ https://doi.org/10.1073/pnas.0409727102
 https://doi.org/10.1128/msystems.00443-23
 """
 LINKAGES = {"single", "average", "complete"}
-METRICS = {"gcs": gene_content_similarity,
-           "jc": jaccard_coefficient,
+METRICS = {"gcs":  gene_content_similarity,
+           "jc":   jaccard_coefficient,
            "pocp": percentage_of_conserved_proteins,
-           "af": alignment_fraction,
-           "aai": average_aminoacid_identity,
-           "peq": proteomic_equivalence_quotient}
+           "af":   alignment_fraction,
+           "aai":  average_aminoacid_identity,
+           "peq":  proteomic_equivalence_quotient}
 K_MIN = 6                       # Minimum size of cluster to sub-cluster
 METRIC = "peq"                  # Default metric
 NR_THRESH = 0.75                # Default 1st iteration cluster threshold
@@ -116,6 +117,17 @@ def parse_args():
                    type=str, choices=METRICS, default=METRIC, metavar="",
                    help=f"relatedness index to use for pairwise genome "
                         f"comparisons [default: {METRIC}]")
+
+    h = p.add_argument_group("heatmap arguments:")
+    h.add_argument("-hc", "--heatmap-colors",
+                   type=str, default=COLORS, metavar="",
+                   help=f"comma-separated list of 2 or 3 colors to use in "
+                        f"heatmaps [default: %(default)s]")
+    h.add_argument("-hm", "--heatmap-midpoint",
+                   type=float, default=None, metavar="",
+                   help=f"midpoint to use for color gradient in heatmaps "
+                        f"[default: same as clustering threshold]")
+
     p.add_argument("-d", "--debug", action="store_true",
                    help=f"increase verbosity of logging for debug purposes")
     p.add_argument("-n", "--no-sub", action="store_true",

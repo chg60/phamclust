@@ -10,7 +10,7 @@ import sys
 from phamclust.cli import parse_args, METRICS
 from phamclust.clustering import hierarchical_clustering
 from phamclust.genome import Genome
-from phamclust.heatmap import draw_heatmap
+from phamclust.heatmap import draw_heatmap, CSS_COLORS
 from phamclust.matrix import matrix_de_novo, matrix_to_squareform, \
     matrix_from_squareform, matrix_to_adjacency
 
@@ -139,7 +139,7 @@ def check_matrix_integrity(matrix):
 
 def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
               clu_distance, clu_linkage, sub_distance, sub_linkage, k_min,
-              no_sub, cpus, rm_tmp, debug):
+              no_sub, colors, midpoint, cpus, rm_tmp, debug):
     """Main program for phamclust.
 
     :param infile: input TSV file mapping phage-to-pham-to-translation
@@ -173,6 +173,10 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
     :type k_min: int
     :param no_sub: indicate that sub-clustering should not be performed
     :type no_sub: bool
+    :param colors: colors to use in heatmaps
+    :type colors: list[str]
+    :param midpoint: midpoint of the color gradient in heatmaps
+    :type midpoint: float
     :param cpus: number of CPUs to use for distance calculations
     :type cpus: int
     :param rm_tmp: remove temporary files when done
@@ -200,6 +204,8 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
     logging.info(f"nr link:    {nr_linkage}")
     logging.info(f"metric:     {metric}")
     logging.info(f"cpus:       {cpus}")
+    logging.info(f"colors:     {','.join(colors)}")
+    logging.info(f"midpoint:   {midpoint}")
 
     # Parse genomes from TSV-formatted infile
     logging.info(f"====================")
@@ -353,15 +359,14 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
         if no_sub or len(clu_mat) < k_min:
             logging.debug(f"not sub-clustering {len(clu_mat)} genomes")
 
-            # Re-order matrix in order of proximity to the medoid; convert to
-            # similarity matrix
-            # order = [clu_mat.medoid[0]]
-            # order.extend(clu_mat.nearest_neighbors(order[0], threshold=1.0))
+            # Re-order matrix in distance tree order
             clu_mat.reorder()
             clu_mat.invert()
             matrix_to_squareform(clu_mat, cluster_matfile)
-            draw_heatmap(clu_mat, midpoint=0.5, filename=cluster_heatmap)
-            draw_heatmap(clu_mat, midpoint=0.5, filename=cluster_heatmap2)
+            draw_heatmap(clu_mat, colors=colors, midpoint=midpoint,
+                         filename=cluster_heatmap)
+            draw_heatmap(clu_mat, colors=colors, midpoint=midpoint,
+                         filename=cluster_heatmap2)
             continue
         else:
             sub_mats = hierarchical_clustering(clu_mat, eps=sub_distance,
@@ -371,9 +376,6 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
             for j, sub_mat in enumerate(sub_mats):
                 sub_matfile = cluster_dir.joinpath(
                     f"subcluster_{j+1}_similarity.tsv")
-                # _ord = [sub_mat.medoid[0]]
-                # _ord.extend(sub_mat.nearest_neighbors(_ord[0], threshold=1.0))
-                # order.extend(_ord)
                 # Can't re-order a matrix with only a single node, and order
                 # doesn't matter for just 2 nodes
                 if len(sub_mat) > 2:
@@ -384,8 +386,10 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
             clu_mat.reorder(order)
             clu_mat.invert()
             matrix_to_squareform(clu_mat, cluster_matfile)
-            draw_heatmap(clu_mat, midpoint=0.5, filename=cluster_heatmap)
-            draw_heatmap(clu_mat, midpoint=0.5, filename=cluster_heatmap2)
+            draw_heatmap(clu_mat, colors=colors, midpoint=midpoint,
+                         filename=cluster_heatmap)
+            draw_heatmap(clu_mat, colors=colors, midpoint=midpoint,
+                         filename=cluster_heatmap2)
             continue
 
     # Make a toplevel directory for singletons, with nested genome dir
@@ -420,17 +424,21 @@ def phamclust(infile, outdir, is_genome_dir, metric, nr_distance, nr_linkage,
         dataset_order.extend(single_mat.nodes)
 
     dataset_html = tmp_clusters.joinpath(f"{metric}_heatmap.html")
+    dataset_svg = tmp_clusters.joinpath(f"{metric}_heatmap.svg")
     dist_mat.reorder(dataset_order)
 
-    logging.info(f"convert to similarity matrix for easier visualization")
+    logging.info(f"cast to similarity matrix for easier visualization")
     dist_mat.invert()
 
-    if len(dist_mat) > 5000:
+    if len(dist_mat) > 1500:
         logging.info(f"full pairwise matrix is too large to visualize")
     else:
         logging.info(f"drawing heatmap HTML and saving to {dataset_html}")
-        draw_heatmap(dist_mat, midpoint=1.0 - clu_distance,
+        draw_heatmap(dist_mat, colors=colors, midpoint=1.0 - clu_distance,
                      filename=dataset_html)
+        logging.info(f"drawing heatmap SVG and saving to {dataset_svg}")
+        draw_heatmap(dist_mat, colors=colors, midpoint=1.0 - clu_distance,
+                     filename=dataset_svg)
 
     # Copy output files to output directory
     logging.info(f"========================")
@@ -492,6 +500,27 @@ def main():
                         format=LOG_STR_FMT, datefmt=LOG_TIME_FMT)
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
+    # sanity-check colors - must be a list of either 2 or 3 valid colors
+    colors = args.heatmap_colors.split(",")
+    if not 2 <= len(colors) <= 3:
+        logging.error(f"expected either two or three colors, got {len(colors)}")
+        sys.exit(1)
+    if len(colors) == 2:
+        logging.warning("2-color scale ignores `--heatmap-midpoint`")
+
+    valid_colors = []
+    for color in colors:
+        if color not in CSS_COLORS:
+            logging.error(f"unknown color specified: '{color}'")
+            continue
+        valid_colors.append(color)
+    if len(valid_colors) != len(colors):
+        logging.error(f"got {len(colors) - len(valid_colors)} unrecognized "
+                      f"colors")
+        logging.error(f"valid colors:")
+        logging.error(f"{' '.join(CSS_COLORS)}")
+        sys.exit(1)
+
     # Run PhamClust!
     phamclust(infile=args.infile,
               outdir=args.outdir,
@@ -504,6 +533,8 @@ def main():
               sub_distance=round(1.0 - args.sub_thresh, 6),
               sub_linkage=args.sub_linkage,
               k_min=max([1, args.k_min]),
+              colors=valid_colors,
+              midpoint=round(args.heatmap_midpoint, 6),
               cpus=args.threads,
               no_sub=args.no_sub,
               rm_tmp=args.remove_tmp,
