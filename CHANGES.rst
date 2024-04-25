@@ -1,10 +1,14 @@
 Latest changes
 ==============
 
-In development
---------------
+Release 1.3.0 -- 2024/04/25
+---------------------------
 
-- Add distogram to heatmaps
+- Exposed heatmap colors and the midpoint of 3-color scales as commandline
+  arguments so users can run wild with their creative preferences
+
+- Joblib version 1.4.0 was officially released, so bumped dependency. Versions
+  below this one are no longer supported in PhamClust
 
 Release 1.2.0 -- 2024/03/06
 ---------------------------
