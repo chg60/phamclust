@@ -1,3 +1,5 @@
+"""Perform pairwise BLASTN comparison of nucleotide FASTA files."""
+
 import shlex
 from subprocess import Popen, PIPE
 
@@ -55,22 +57,36 @@ def blastn_multiple(query, subjects, d):
     return outname
 
 
-if __name__ == "__main__":
+def main():
+    """Commandline entrypoint"""
+    import argparse
     import pathlib
-    import sys
 
     from joblib import Parallel, delayed
 
     from phamclust.parallel_process import CPUS
     from phamclust.matrix import matrix_from_adjacency, matrix_to_squareform
 
-    indir = pathlib.Path(sys.argv[1]).resolve()
+    p = argparse.ArgumentParser(description="__doc__")
+    p.add_argument("indir", type=pathlib.Path,
+                   help="path to a folder containing nucleotide FASTA files")
+    p.add_argument("-o", "--outdir",
+                   type=pathlib.Path, default=None,
+                   help="path to a folder to write BLASTN results to")
 
-    outdir = indir.parent.joinpath("blastn")
-    if not outdir.is_dir():
-        outdir.mkdir()
+    args = p.parse_args()
 
-    fnas = [x for x in indir.iterdir() if x.suffix == ".fna"]
+    # Expand commandline args
+    indir: pathlib.Path = args.indir
+    outdir: pathlib.Path = args.outdir
+
+    # If not given outdir, create one
+    if not outdir:
+        outdir = indir.parent.joinpath("blastn")
+        print(f"using '{outdir}' to write blastn results")
+    outdir.mkdir(exist_ok=True, parents=True)
+
+    fnas = [x for x in indir.iterdir() if x.suffix in (".fna", ".fa", ".fasta")]
 
     # Initialize parallel runner - disable memory mapping
     runner = Parallel(n_jobs=CPUS, return_as="generator_unordered",
@@ -87,55 +103,56 @@ if __name__ == "__main__":
     temp_outs.extend(runner(delayed(blastn_multiple)(*b) for b in batch))
 
     outfile = outdir.parent.joinpath("blastn_adjacency.tsv")
-    if not outfile.is_file():
-        blastn_map = dict()
-        for temp_out in temp_outs:
-            with open(temp_out, "r") as temp_reader:
-                for row in temp_reader:
-                    source, target, *(data) = row.rstrip().split("\t")
-                    for i, datum in enumerate(data):
-                        try:
-                            data[i] = int(datum)
-                        except ValueError:
-                            data[i] = float(datum)
+    blastn_map = dict()
+    for temp_out in temp_outs:
+        with open(temp_out, "r") as temp_reader:
+            for row in temp_reader:
+                source, target, *(data) = row.rstrip().split("\t")
+                for i, datum in enumerate(data):
+                    try:
+                        data[i] = int(datum)
+                    except ValueError:
+                        data[i] = float(datum)
 
-                    if source in blastn_map:
-                        if target in blastn_map[source]:
-                            blastn_map[source][target].append(data)
-                        else:
-                            blastn_map[source][target] = [data]
+                if source in blastn_map:
+                    if target in blastn_map[source]:
+                        blastn_map[source][target].append(data)
                     else:
-                        blastn_map[source] = {target: [data]}
-
-        fh = open(outfile, "w")
-
-        nodes = sorted(blastn_map.keys())
-        for i, source in enumerate(nodes):
-            for target in nodes[i:]:
-                source_data = blastn_map[source].get(target, dict())
-                target_data = blastn_map[target].get(source, dict())
-                if not source_data and not target_data:
-                    weight = 0.0
-                elif not source_data:
-                    numerator = sum([int(x[0]) for x in target_data])
-                    denominator = target_data[0][-3]
-                    weight = min([numerator/denominator, 1.0])
-                elif not target_data:
-                    numerator = sum([int(x[0]) for x in source_data])
-                    denominator = source_data[0][-3]
-                    weight = min([numerator/denominator, 1.0])
+                        blastn_map[source][target] = [data]
                 else:
-                    numerator = sum([int(x[0]) for x in source_data])
-                    numerator += sum([int(x[0]) for x in target_data])
-                    denominator = int(source_data[0][-3])
-                    denominator += int(target_data[0][-3])
-                    weight = min([numerator/denominator, 1.0])
+                    blastn_map[source] = {target: [data]}
 
-                fh.write(f"{source}\t{target}\t{1.0 - weight:.6f}\n")
+    fh = open(outfile, "w")
+    nodes = sorted(blastn_map.keys())
+    for i, source in enumerate(nodes):
+        for target in nodes[i:]:
+            source_data = blastn_map[source].get(target, dict())
+            target_data = blastn_map[target].get(source, dict())
+            if not source_data and not target_data:
+                weight = 0.0
+            elif not source_data:
+                numerator = sum([int(x[0]) for x in target_data])
+                denominator = target_data[0][-3]
+                weight = min([numerator/denominator, 1.0])
+            elif not target_data:
+                numerator = sum([int(x[0]) for x in source_data])
+                denominator = source_data[0][-3]
+                weight = min([numerator/denominator, 1.0])
+            else:
+                numerator = sum([int(x[0]) for x in source_data])
+                numerator += sum([int(x[0]) for x in target_data])
+                denominator = int(source_data[0][-3])
+                denominator += int(target_data[0][-3])
+                weight = min([numerator/denominator, 1.0])
 
-        fh.close()
+            fh.write(f"{source}\t{target}\t{1.0 - weight:.6f}\n")
 
-    distmat = matrix_from_adjacency(outfile)
-    matrix_to_squareform(distmat,
+    fh.close()
+
+    matrix_to_squareform(matrix_from_adjacency(outfile),
                          outfile.with_name("blastn_distance_matrix.tsv"),
                          lower_triangle=True)
+
+
+if __name__ == "__main__":
+    main()
