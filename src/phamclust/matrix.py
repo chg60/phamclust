@@ -611,7 +611,7 @@ def matrix_from_squareform(filepath):
     # Analyze diagonal: should be either 0.0 (distance) or 1.0 (similarity)
     if sum(diagonal) == 0.0:
         is_distance = True
-    elif sum(diagonal) == 1.0:
+    elif sum(diagonal) == len(diagonal):
         is_distance = False
     else:
         raise ValueError(f"values on matrix diagonal can only be 0.0 or 1.0")
@@ -665,7 +665,7 @@ def matrix_to_squareform(matrix, filepath, lower_triangle=False):
             else:
                 row = "\t".join([f"{x:.6f}" for x in row[:i + 1]])
 
-            squareform_writer.write(f"{source:<24}\t{row}\n")
+            squareform_writer.write(f"{source}\t{row}\n")
 
     return filepath
 
