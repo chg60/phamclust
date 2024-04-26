@@ -124,9 +124,9 @@ def parse_args():
                    help=f"comma-separated list of 2 or 3 colors to use in "
                         f"heatmaps [default: %(default)s]")
     h.add_argument("-hm", "--heatmap-midpoint",
-                   type=float, default=None, metavar="",
+                   type=float, default=0.5, metavar="",
                    help=f"midpoint to use for color gradient in heatmaps "
-                        f"[default: same as clustering threshold]")
+                        f"[default: %(default)s]")
 
     p.add_argument("-d", "--debug", action="store_true",
                    help=f"increase verbosity of logging for debug purposes")

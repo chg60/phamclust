@@ -1,6 +1,12 @@
 Latest changes
 ==============
 
+Release 1.3.1 -- 2024/04/26
+---------------------------
+
+- Bug fix: `--heatmap-midpoint` default value changed from None to 0.5 to
+  prevent `TypeError` if this value is not specified
+
 Release 1.3.0 -- 2024/04/25
 ---------------------------
 
