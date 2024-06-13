@@ -2,38 +2,13 @@
 
 import argparse
 import pathlib
-from psutil import virtual_memory, cpu_count
+from multiprocessing import cpu_count
 
 from phamclust.metrics import *
 
 
-def recommended_cpus(main=4.0, per_core=1.0):
-    """Calculate how many cores can be safely used without straining
-    the system.
-
-    Defaults are calibrated against a large matrix.
-
-    A system with 8 cores and 12 GB available memory will recommend
-    using 8 cores.
-
-    :param main: assumed memory needed for the main process
-    :type main: float
-    :param per_core: assumed memory needed for each child process
-    :type per_core: float
-    :return: cpus
-    """
-    # Assume that the used memory won't become available
-    mem = virtual_memory().available / 1024 / 1024
-    cpus = cpu_count()
-
-    while mem - main / cpus < per_core:
-        cpus -= 1
-
-    return cpus
-
-
 COLORS = "red,yellow,green"
-CPUS = recommended_cpus()
+CPUS = cpu_count()
 EPILOG = """
 Available metrics:
 
@@ -87,36 +62,36 @@ def parse_args():
     c.add_argument("-k", "--k-min",
                    type=int, default=K_MIN, metavar="",
                    help=f"minimum cluster size to perform subclustering "
-                        f"[default: {K_MIN}]")
+                        f"[default: %(default)s]")
     c.add_argument("-s", "--sub-thresh",
                    type=float, default=SUB_THRESH, metavar="",
                    help=f"similarity threshold to use for sub-clustering "
-                        f"[default: {SUB_THRESH}]")
+                        f"[default: %(default)s]")
     c.add_argument("-sl", "--sub-linkage",
                    type=str, choices=LINKAGES, default=SUB_LINKAGE, metavar="",
                    help=f"linkage type to use for sub-clustering "
-                        f"[default: {SUB_LINKAGE}]")
+                        f"[default: %(default)s]")
     c.add_argument("-c", "--clu-thresh",
                    type=float, default=CLU_THRESH, metavar="",
                    help=f"similarity threshold to use for clustering "
-                        f"[default: {CLU_THRESH}]")
+                        f"[default: %(default)s]")
     c.add_argument("-cl", "--clu-linkage",
                    type=str, choices=LINKAGES, default=CLU_LINKAGE, metavar="",
                    help=f"linkage type to use for clustering "
-                        f"[default: {CLU_LINKAGE}]")
+                        f"[default: %(default)s]")
     c.add_argument("-nr", "--nr-thresh",
                    type=float, default=NR_THRESH, metavar="",
                    help=f"similarity threshold above which to pre-group "
                         f"very similar genomes that must be clustered together "
-                        f"[default: {NR_THRESH}]")
+                        f"[default: %(default)s]")
     c.add_argument("-nl", "--nr-linkage",
                    type=str, choices=LINKAGES, default=NR_LINKAGE, metavar="",
                    help=f"linkage type to use for pre-grouping very similar "
-                        f"genomes [default: {NR_LINKAGE}]")
+                        f"genomes [default: %(default)s]")
     c.add_argument("-m", "--metric",
                    type=str, choices=METRICS, default=METRIC, metavar="",
                    help=f"relatedness index to use for pairwise genome "
-                        f"comparisons [default: {METRIC}]")
+                        f"comparisons [default: %(default)s]")
 
     h = p.add_argument_group("heatmap arguments:")
     h.add_argument("-hc", "--heatmap-colors",
@@ -137,6 +112,6 @@ def parse_args():
                         f"runs are planned on the same dataset)")
     p.add_argument("-t", "--threads",
                    type=int, default=CPUS, metavar="",
-                   help=f"number of CPU cores to use [default: {CPUS}]")
+                   help=f"number of CPU cores to use [default: %(default)s]")
 
     return p.parse_args()
