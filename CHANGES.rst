@@ -1,7 +1,18 @@
 Latest changes
 ==============
 
-Release 1.3.1 -- 2024/04/26
+Release 1.3.2 -- 2024/06/13
+---------------------------
+
+- Added new pipeline `nucclust` to cluster genomes using nucleotide sequences
+  directly instead of pham data. This pipeline requires that `blastn` be
+  installed and in the PATH. The pipeline uses similar `blastn` parameters as
+  VIRIDIC's default (sensitive) settings, and the same math for calculating
+  intergenomic similarity/distance. In our experience, it is much faster than
+  VIRIDIC, but also much slower than pham-based clustering and distance
+  calculation.
+
+Release 1.3.1 -- 2024/04/26ß
 ---------------------------
 
 - Bug fix: `--heatmap-midpoint` default value changed from None to 0.5 to
