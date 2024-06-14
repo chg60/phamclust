@@ -1,6 +1,7 @@
 """PhamClust pipeline, but using BLASTN to calculate inter-genomic distances."""
 
 import argparse
+import csv
 import datetime
 import logging
 import pathlib
@@ -19,7 +20,7 @@ from phamclust.matrix import matrix_to_adjacency, \
 
 # BLAST fields to use
 BLASTN_FIELDS = ['qseqid', 'sseqid', 'nident', 'length', 'qstart', 'qend',
-                 'sstart', 'send', 'qlen', 'slen', 'evalue' 'bitscore']
+                 'sstart', 'send', 'qlen', 'slen', 'evalue', 'bitscore']
 
 # Heatmap settings
 COLORS = "red,yellow,green"
@@ -213,46 +214,68 @@ def matrix_de_novo(genomes, cpus, tmp, as_distance=True):
         batch.append((query.filepath, [t.filepath for t in genomes], tmp))
     temp_outs.extend(runner(joblib.delayed(blastn_multiple)(*b) for b in batch))
 
+    # Read BLASTN data into a dictionary mapping all hit data between observed
+    # source-target pairs
+    # BLASTN_FIELDS = ['qseqid', 'sseqid', 'nident', 'length', 'qstart', 'qend',
+    #                  'sstart', 'send', 'qlen', 'slen', 'evalue' 'bitscore']
     blastn_map = dict()
     for temp_out in temp_outs:
         with open(temp_out, "r") as temp_reader:
-            for row in temp_reader:
-                source, target, *(data) = row.rstrip().split("\t")
-                for i, datum in enumerate(data):
+            reader = csv.DictReader(temp_reader, delimiter="\t",
+                                    fieldnames=BLASTN_FIELDS)
+            # Iterate over rows (no header, so no need to skip first row)
+            for row in reader:
+                # source, target, *(data) = row.rstrip().split("\t")
+                source, target = row.pop("qseqid"), row.pop("sseqid")
+                for key, value in row.items():
                     try:
-                        data[i] = int(datum)
+                        row[key] = int(value)
                     except ValueError:
-                        data[i] = float(datum)
+                        row[key] = float(value)
 
                 if source in blastn_map:
                     if target in blastn_map[source]:
-                        blastn_map[source][target].append(data)
+                        blastn_map[source][target].append(row)
                     else:
-                        blastn_map[source][target] = [data]
+                        blastn_map[source][target] = [row]
                 else:
-                    blastn_map[source] = {target: [data]}
+                    blastn_map[source] = {target: [row]}
 
-    nodes = sorted(blastn_map.keys())
+    # blastn_map is now a dict() mapping source genome names to target
+    # genome names to a list of BLASTN data key-value pairs
+    nodes = matrix.nodes
     for i, source in enumerate(nodes):
         for target in nodes[i:]:
-            source_data = blastn_map[source].get(target, dict())
-            target_data = blastn_map[target].get(source, dict())
-            if not source_data and not target_data:
-                weight = 0.0
-            elif not source_data:
-                numerator = sum([int(x[0]) for x in target_data])
-                denominator = target_data[0][-3]
+            # source_hits result from blastn(source, target)
+            source_hits = blastn_map[source].get(target, dict())
+
+            # target_hits result from blastn(target, source)
+            target_hits = blastn_map[target].get(source, dict())
+
+            # We prefer the case where source_hits and target_hits are both
+            # non-empty, but we can handle the case where one is empty
+            if source_hits and target_hits:
+                numerator = sum([hsp["nident"] for hsp in source_hits])
+                numerator += sum([hsp["nident"] for hsp in target_hits])
+                denominator = source_hits[0]["qlen"] + target_hits[0]["qlen"]
                 weight = min([numerator / denominator, 1.0])
-            elif not target_data:
-                numerator = sum([int(x[0]) for x in source_data])
-                denominator = source_data[0][-3]
+            # If we have source_hits but no target_hits, we can calculate the
+            # weight as the sum of the nident values divided by the qlen of the
+            # source genome
+            elif source_hits:
+                numerator = sum([hsp["nident"] for hsp in source_hits])
+                denominator = source_hits[0]["qlen"]
                 weight = min([numerator / denominator, 1.0])
+            # If we have target_hits but no source_hits, we can calculate the
+            # weight as the sum of the nident values divided by the qlen of the
+            # target genome
+            elif target_hits:
+                numerator = sum([hsp["nident"] for hsp in target_hits])
+                denominator = target_hits[0]["qlen"]
+                weight = min([numerator / denominator, 1.0])
+            # If we have no recorded hits between source and target, weight is 0
             else:
-                numerator = sum([int(x[0]) for x in source_data])
-                numerator += sum([int(x[0]) for x in target_data])
-                denominator = int(source_data[0][-3])
-                denominator += int(target_data[0][-3])
-                weight = min([numerator / denominator, 1.0])
+                weight = 0.0
 
             if as_distance:
                 weight = 1.0 - weight
