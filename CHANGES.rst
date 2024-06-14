@@ -1,6 +1,17 @@
 Latest changes
 ==============
 
+Release 1.3.3 -- 2024/06/14
+---------------------------
+
+- Bug fix: `nucclust` pipeline was miscalculating distances due to a
+  combination of two factors which have now been rectified:
+    - invoking `blastn` with a bad field name, resulting in missing evalue
+      and bitscore from intermediate files
+    - parsing blast HSPs as lists and using negative integers to slice them,
+      such that the 'send' field was being used instead of 'qlen' in the
+      denominator
+
 Release 1.3.2 -- 2024/06/13
 ---------------------------
 
